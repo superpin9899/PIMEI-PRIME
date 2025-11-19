@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  @apply bg-white text-gray-900 antialiased;
+}
+
+::selection {
+  background: rgba(93, 0, 8, 0.6);
+  color: #fff;
+}
+
+.noise-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background-image: url('https://uploads-ssl.webflow.com/63c4c4a7f6911df1ef82/book-noise.png');
+  opacity: 0.05;
+  mix-blend-mode: screen;
+  z-index: 10;
+}
+
+.marquee {
+  --marquee-speed: 30s;
+  display: flex;
+  width: 200%;
+  animation: marquee var(--marquee-speed) linear infinite;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+

@@ -1,0 +1,8 @@
+{
+  "supabase": {
+    "url": "https://tu-proyecto.supabase.co",
+    "serviceKey": "tu-service-role-secret-key-aqui",
+    "anonKey": "tu-anon-public-key-aqui"
+  }
+}
+
