@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, ChangeEvent, FormEvent } from 'react';
+import { useEffect, useRef, useState, ChangeEvent, FormEvent, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Crown, Briefcase, BookOpen, Sparkles } from 'lucide-react';
@@ -13,6 +13,9 @@ type PrimeUser = {
   is_woman: boolean | null;
   receives_benefits: boolean | null;
   avatar_path: string | null;
+  xp_total: number;
+  level: number;
+  xp_next_threshold: number;
 };
 
 type Training = {
@@ -32,6 +35,10 @@ type Experience = {
   end_date: string | null;
   description: string | null;
 };
+
+const xpRequiredForLevel = (level: number) => 100 * level * level;
+const xpThresholdForLevel = (level: number) => 100 * (level + 1) * (level + 1);
+const xpWithinLevel = (xpTotal: number, level: number) => xpTotal - xpRequiredForLevel(level);
 
 const UserProfile = () => {
   const { session } = useAuth();
@@ -59,6 +66,96 @@ const UserProfile = () => {
     end_date: '',
     description: '',
   });
+  const [displayXp, setDisplayXp] = useState(0);
+  const [displayLevel, setDisplayLevel] = useState(0);
+  const previousXpRef = useRef<number | null>(null);
+  const previousLevelRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const [showLevelUpOverlay, setShowLevelUpOverlay] = useState(false);
+  const [levelUpOverlayLevel, setLevelUpOverlayLevel] = useState(0);
+  const [debugXpInput, setDebugXpInput] = useState('');
+  const [debugXpLoading, setDebugXpLoading] = useState(false);
+
+  const triggerLevelUpOverlay = useCallback((level: number) => {
+    setLevelUpOverlayLevel(level);
+    setShowLevelUpOverlay(true);
+    const timeout = setTimeout(() => setShowLevelUpOverlay(false), 1800);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  const animateXpGain = useCallback(
+    (startXp: number, startLevel: number, targetXp: number) => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      let currentXp = startXp;
+      let currentLevel = startLevel;
+      setDisplayLevel(currentLevel);
+      setDisplayXp(xpWithinLevel(currentXp, currentLevel));
+
+      const animateSegment = () => {
+        const nextThreshold = xpThresholdForLevel(currentLevel);
+        const segmentTarget = Math.min(targetXp, nextThreshold);
+        const duration = 600;
+        const startTime = performance.now();
+        const initialValue = xpWithinLevel(currentXp, currentLevel);
+        const targetValue = xpWithinLevel(segmentTarget, currentLevel);
+
+        const step = (time: number) => {
+          const progress = Math.min((time - startTime) / duration, 1);
+          const value = initialValue + (targetValue - initialValue) * progress;
+          setDisplayXp(value);
+
+          if (progress < 1) {
+            animationFrameRef.current = requestAnimationFrame(step);
+          } else {
+            currentXp = segmentTarget;
+
+            if (segmentTarget === nextThreshold && targetXp > nextThreshold) {
+              currentLevel += 1;
+              setDisplayLevel(currentLevel);
+              triggerLevelUpOverlay(currentLevel);
+              animateSegment();
+            } else if (segmentTarget < targetXp) {
+              animateSegment();
+            }
+          }
+        };
+
+        animationFrameRef.current = requestAnimationFrame(step);
+      };
+
+      if (targetXp > currentXp) {
+        animateSegment();
+      } else {
+        setDisplayXp(xpWithinLevel(targetXp, currentLevel));
+        setDisplayLevel(currentLevel);
+      }
+    },
+    [triggerLevelUpOverlay]
+  );
+
+  useEffect(() => {
+    if (!userData) return;
+    const actualXp = userData.xp_total ?? 0;
+    const actualLevel = userData.level ?? 0;
+
+    if (previousXpRef.current === null || previousLevelRef.current === null) {
+      setDisplayXp(xpWithinLevel(actualXp, actualLevel));
+      setDisplayLevel(actualLevel);
+      previousXpRef.current = actualXp;
+      previousLevelRef.current = actualLevel;
+      return;
+    }
+
+    if (actualXp > previousXpRef.current) {
+      animateXpGain(previousXpRef.current, previousLevelRef.current, actualXp);
+    } else {
+      setDisplayXp(xpWithinLevel(actualXp, actualLevel));
+      setDisplayLevel(actualLevel);
+    }
+
+    previousXpRef.current = actualXp;
+    previousLevelRef.current = actualLevel;
+  }, [userData?.xp_total, userData?.level, animateXpGain]);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -67,10 +164,20 @@ const UserProfile = () => {
       setLoading(true);
       const { data } = await supabase
         .from('prime_users')
-        .select('first_name,last_name,email,phone,province,percentage_progress,is_woman,receives_benefits,avatar_path')
+        .select(
+          'first_name,last_name,email,phone,province,percentage_progress,is_woman,receives_benefits,avatar_path,xp_total,level,xp_next_threshold'
+        )
         .eq('user_id', session.user.id)
         .single();
-      setUserData(data);
+      const normalizedData = data
+        ? {
+            ...data,
+            xp_total: Number(data.xp_total ?? 0),
+            xp_next_threshold: Number(data.xp_next_threshold ?? 100),
+            level: Number(data.level ?? 0),
+          }
+        : null;
+      setUserData(normalizedData);
       if (data?.avatar_path) {
         const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(data.avatar_path);
         setAvatarUrl(publicUrl.publicUrl ? `${publicUrl.publicUrl}?t=${Date.now()}` : null);
@@ -95,6 +202,10 @@ const UserProfile = () => {
       setLoading(false);
     };
     loadProfile();
+
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
   }, [session?.user?.id]);
 
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -206,8 +317,60 @@ const UserProfile = () => {
     return <div className="min-h-[60vh] bg-white px-6 py-24 text-center text-gray-500">Inicia sesión para ver tu perfil.</div>;
   }
 
+  const nextLevelRequirement = xpThresholdForLevel(displayLevel);
+  const xpRange = Math.max(1, nextLevelRequirement - xpRequiredForLevel(displayLevel));
+  const xpRatio = Math.min(100, Math.max(0, (displayXp / xpRange) * 100));
+  const xpRemaining = Math.max(0, Math.ceil(xpRange - displayXp));
+
   return (
     <section className="min-h-screen bg-[#f1f2f6] px-4 py-10 md:px-8">
+      <div className="mb-4 flex flex-col gap-2 rounded-3xl border border-dashed border-brand/30 bg-white/70 p-4 text-sm text-gray-600 lg:max-w-md">
+        <p className="text-xs uppercase tracking-[0.3em] text-brand">Debug XP</p>
+        <p className="text-xs text-gray-500">Introduce XP a sumar y pulsa el botón para simular recompensas.</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            value={debugXpInput}
+            onChange={(e) => setDebugXpInput(e.target.value)}
+            className="w-32 rounded-2xl border border-gray-200 px-3 py-2 text-sm"
+            placeholder="+XP"
+            min="0"
+          />
+          <button
+            disabled={debugXpLoading}
+            onClick={async () => {
+              if (!session?.user || !debugXpInput) return;
+              const amount = Number(debugXpInput);
+              if (Number.isNaN(amount) || amount <= 0) return;
+              setDebugXpLoading(true);
+              const { data, error } = await supabase.rpc('add_experience', {
+                target_user: session.user.id,
+                amount,
+              });
+              setDebugXpLoading(false);
+              if (error) {
+                console.error(error.message);
+                return;
+              }
+              if (data) {
+                setUserData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        xp_total: Number(data.xp_total ?? prev.xp_total),
+                        level: Number(data.level ?? prev.level),
+                        xp_next_threshold: Number(data.xp_next_threshold ?? prev.xp_next_threshold),
+                      }
+                    : prev
+                );
+              }
+            }}
+            className="rounded-2xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {debugXpLoading ? 'Aplicando...' : 'Aplicar XP'}
+          </button>
+        </div>
+      </div>
       <div className="mx-auto flex max-w-6xl flex-col gap-8 lg:flex-row">
         <div className="flex-1 space-y-8">
           <div className="rounded-4xl border border-gray-200 bg-white/80 p-8 shadow-lg">
@@ -507,16 +670,23 @@ const UserProfile = () => {
               <ul className="mt-4 space-y-3 text-sm text-gray-600">
                 <li className="flex items-center justify-between">
                   Nivel PRIME
-                  <span className="rounded-2xl bg-brand/10 px-3 py-1 text-brand">1</span>
+                  <span className="rounded-2xl bg-brand/10 px-3 py-1 text-brand font-semibold">{displayLevel}</span>
                 </li>
                 <li>
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <span>Exp acumulada</span>
-                    <span>120 / 500</span>
+                    <span>
+                      {Math.floor(displayXp)} / {Math.floor(xpRange)} XP
+                    </span>
                   </div>
-                  <div className="mt-1 h-2 rounded-full bg-gray-100">
-                    <div className="h-2 rounded-full bg-brand" style={{ width: '24%' }} />
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-2 rounded-full bg-brand" style={{ width: `${xpRatio}%` }} />
                   </div>
+                </li>
+                <li className="text-xs text-gray-500">
+                  Te faltan{' '}
+                  <span className="font-semibold text-brand">{xpRemaining} XP</span>{' '}
+                  para subir al siguiente nivel.
                 </li>
                 <li>
                   <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
@@ -538,6 +708,19 @@ const UserProfile = () => {
           </div>
         </aside>
       </div>
+      {showLevelUpOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-6 text-center text-white">
+          <div className="space-y-4">
+            <p className="text-xs uppercase tracking-[0.4em] text-brand">Ascenso PRIME</p>
+            <h2 className="text-4xl font-bold">¡Subes de nivel PRIME!</h2>
+            <p className="text-lg text-brand">Ahora eres nivel {levelUpOverlayLevel}</p>
+            <ul className="space-y-1 text-sm text-gray-200">
+              <li>• Puedes reclamar recompensas exclusivas</li>
+              <li>• Se desbloquean nuevas misiones en el gremio</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
