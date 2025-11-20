@@ -4,6 +4,7 @@ import AdminDashboard from './components/admin/AdminDashboard';
 import AdminUsers from './components/admin/AdminUsers';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import UserProfile from './components/UserProfile';
+import UserAchievementsHub from './components/achievements/UserAchievementsHub';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         </Route>
         <Route element={<ProtectedRoute requireAdmin={false} />}>
           <Route path="/perfil" element={<UserProfile />} />
+          <Route path="/logros" element={<UserAchievementsHub />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, ChangeEvent, FormEvent, useCallback } from 'react';
+import { useEffect, useRef, useState, ChangeEvent, FormEvent, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Crown, Briefcase, BookOpen, Sparkles } from 'lucide-react';
+import { Crown, Briefcase, BookOpen, Sparkles, Lock } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 type PrimeUser = {
   first_name: string;
@@ -40,8 +42,13 @@ const xpRequiredForLevel = (level: number) => 100 * level * level;
 const xpThresholdForLevel = (level: number) => 100 * (level + 1) * (level + 1);
 const xpWithinLevel = (xpTotal: number, level: number) => xpTotal - xpRequiredForLevel(level);
 
+const achievementPlaceholders = Array.from({ length: 21 }, (_, index) => ({
+  id: `slot-${index + 1}`,
+}));
+
 const UserProfile = () => {
   const { session } = useAuth();
+  const navigate = useNavigate();
   const [userData, setUserData] = useState<PrimeUser | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [training, setTraining] = useState<Training[]>([]);
@@ -75,12 +82,21 @@ const UserProfile = () => {
   const [levelUpOverlayLevel, setLevelUpOverlayLevel] = useState(0);
   const [debugXpInput, setDebugXpInput] = useState('');
   const [debugXpLoading, setDebugXpLoading] = useState(false);
+  const overlaySparkles = useMemo(
+    () =>
+      Array.from({ length: 16 }, (_, id) => ({
+        id,
+        top: Math.random() * 100,
+        left: Math.random() * 100,
+        delay: Math.random() * 2,
+        duration: 4 + Math.random() * 4,
+      })),
+    []
+  );
 
   const triggerLevelUpOverlay = useCallback((level: number) => {
     setLevelUpOverlayLevel(level);
     setShowLevelUpOverlay(true);
-    const timeout = setTimeout(() => setShowLevelUpOverlay(false), 1800);
-    return () => clearTimeout(timeout);
   }, []);
 
   const animateXpGain = useCallback(
@@ -324,55 +340,9 @@ const UserProfile = () => {
 
   return (
     <section className="min-h-screen bg-[#f1f2f6] px-4 py-10 md:px-8">
-      <div className="mb-4 flex flex-col gap-2 rounded-3xl border border-dashed border-brand/30 bg-white/70 p-4 text-sm text-gray-600 lg:max-w-md">
-        <p className="text-xs uppercase tracking-[0.3em] text-brand">Debug XP</p>
-        <p className="text-xs text-gray-500">Introduce XP a sumar y pulsa el botón para simular recompensas.</p>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            value={debugXpInput}
-            onChange={(e) => setDebugXpInput(e.target.value)}
-            className="w-32 rounded-2xl border border-gray-200 px-3 py-2 text-sm"
-            placeholder="+XP"
-            min="0"
-          />
-          <button
-            disabled={debugXpLoading}
-            onClick={async () => {
-              if (!session?.user || !debugXpInput) return;
-              const amount = Number(debugXpInput);
-              if (Number.isNaN(amount) || amount <= 0) return;
-              setDebugXpLoading(true);
-              const { data, error } = await supabase.rpc('add_experience', {
-                target_user: session.user.id,
-                amount,
-              });
-              setDebugXpLoading(false);
-              if (error) {
-                console.error(error.message);
-                return;
-              }
-              if (data) {
-                setUserData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        xp_total: Number(data.xp_total ?? prev.xp_total),
-                        level: Number(data.level ?? prev.level),
-                        xp_next_threshold: Number(data.xp_next_threshold ?? prev.xp_next_threshold),
-                      }
-                    : prev
-                );
-              }
-            }}
-            className="rounded-2xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {debugXpLoading ? 'Aplicando...' : 'Aplicar XP'}
-          </button>
-        </div>
-      </div>
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 lg:flex-row">
-        <div className="flex-1 space-y-8">
+      <div className="mx-auto max-w-6xl space-y-8 lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(280px,1.1fr)] lg:gap-8 lg:space-y-0">
+        <div className="space-y-8">
+          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[2fr_1fr]">
           <div className="rounded-4xl border border-gray-200 bg-white/80 p-8 shadow-lg">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-4">
@@ -393,6 +363,53 @@ const UserProfile = () => {
                     {userData ? `${userData.first_name} ${userData.last_name}` : 'Cargando...'}
                   </h1>
                   <p className="text-sm text-gray-500">{userData?.email}</p>
+                  <div className="mt-4 rounded-2xl border border-dashed border-brand/30 bg-brand/5 p-4 text-sm text-gray-600">
+                    <p className="text-xs uppercase tracking-[0.3em] text-brand">Debug XP</p>
+                    <p className="text-xs text-gray-500">Esta función se deshabilitará en la versión final del software.</p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="number"
+                        value={debugXpInput}
+                        onChange={(e) => setDebugXpInput(e.target.value)}
+                        className="w-32 rounded-2xl border border-gray-200 px-3 py-2 text-sm"
+                        placeholder="+XP"
+                        min="0"
+                      />
+                      <button
+                        disabled={debugXpLoading}
+                        onClick={async () => {
+                          if (!session?.user || !debugXpInput) return;
+                          const amount = Number(debugXpInput);
+                          if (Number.isNaN(amount) || amount <= 0) return;
+                          setDebugXpLoading(true);
+                          const { data, error } = await supabase.rpc('add_experience', {
+                            target_user: session.user.id,
+                            amount,
+                          });
+                          setDebugXpLoading(false);
+                          if (error) {
+                            console.error(error.message);
+                            return;
+                          }
+                          if (data) {
+                            setUserData((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    xp_total: Number(data.xp_total ?? prev.xp_total),
+                                    level: Number(data.level ?? prev.level),
+                                    xp_next_threshold: Number(data.xp_next_threshold ?? prev.xp_next_threshold),
+                                  }
+                                : prev
+                            );
+                          }
+                        }}
+                        className="rounded-2xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        {debugXpLoading ? 'Aplicando...' : 'Aplicar XP'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <button className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600">
@@ -402,6 +419,42 @@ const UserProfile = () => {
             </div>
           </div>
 
+          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Resumen de progreso</p>
+            <ul className="mt-4 space-y-3 text-sm text-gray-600">
+              <li className="flex items-center justify-between">
+                Nivel PRIME
+                <span className="rounded-2xl bg-brand/10 px-3 py-1 text-brand font-semibold">{displayLevel}</span>
+              </li>
+              <li>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Exp acumulada</span>
+                  <span>
+                    {Math.floor(displayXp)} / {Math.floor(xpRange)} XP
+                  </span>
+                </div>
+                <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-2 rounded-full bg-brand" style={{ width: `${xpRatio}%` }} />
+                </div>
+              </li>
+              <li className="text-xs text-gray-500">
+                Te faltan <span className="font-semibold text-brand">{xpRemaining} XP</span> para subir al siguiente nivel.
+              </li>
+              <li>
+                <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                  Gremio de misiones PRIME
+                </button>
+              </li>
+              <li>
+                <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                  Mi progreso global
+                </button>
+              </li>
+            </ul>
+          </div>
+          </div>
+
+          <div className="space-y-8">
           <div className="grid gap-6 md:grid-cols-2">
             <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Progreso</p>
@@ -661,66 +714,146 @@ const UserProfile = () => {
               ))}
             </div>
           </div>
+          </div>
         </div>
 
-        <aside className="lg:w-80 lg:flex-shrink-0">
-          <div className="sticky top-10 space-y-6">
+        <aside className="lg:flex lg:flex-col">
+          <div className="sticky top-10">
             <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Resumen de progreso</p>
-              <ul className="mt-4 space-y-3 text-sm text-gray-600">
-                <li className="flex items-center justify-between">
-                  Nivel PRIME
-                  <span className="rounded-2xl bg-brand/10 px-3 py-1 text-brand font-semibold">{displayLevel}</span>
-                </li>
-                <li>
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>Exp acumulada</span>
-                    <span>
-                      {Math.floor(displayXp)} / {Math.floor(xpRange)} XP
-                    </span>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Logros</p>
+                <button
+                  onClick={() => navigate('/logros')}
+                  className="rounded-2xl border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Centro de logros
+                </button>
+              </div>
+              <div className="mt-4 h-px w-full bg-gray-100" />
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {achievementPlaceholders.map((achievement) => (
+                  <div
+                    key={achievement.id}
+                    className="group flex aspect-square items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-brand/50 transition-transform duration-200 hover:-translate-y-1 hover:border-brand/40 hover:bg-white"
+                  >
+                    <div className="rounded-2xl bg-white p-2 shadow-sm transition duration-200 group-hover:shadow-md">
+                      <Lock size={18} />
+                    </div>
                   </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-2 rounded-full bg-brand" style={{ width: `${xpRatio}%` }} />
-                  </div>
-                </li>
-                <li className="text-xs text-gray-500">
-                  Te faltan{' '}
-                  <span className="font-semibold text-brand">{xpRemaining} XP</span>{' '}
-                  para subir al siguiente nivel.
-                </li>
-                <li>
-                  <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                    Centro de logros
-                  </button>
-                </li>
-                <li>
-                  <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                    Gremio de misiones PRIME
-                  </button>
-                </li>
-                <li>
-                  <button className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                    Mi progreso global
-                  </button>
-                </li>
-              </ul>
+                ))}
+              </div>
             </div>
           </div>
         </aside>
       </div>
-      {showLevelUpOverlay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-6 text-center text-white">
-          <div className="space-y-4">
-            <p className="text-xs uppercase tracking-[0.4em] text-brand">Ascenso PRIME</p>
-            <h2 className="text-4xl font-bold">¡Subes de nivel PRIME!</h2>
-            <p className="text-lg text-brand">Ahora eres nivel {levelUpOverlayLevel}</p>
-            <ul className="space-y-1 text-sm text-gray-200">
-              <li>• Puedes reclamar recompensas exclusivas</li>
-              <li>• Se desbloquean nuevas misiones en el gremio</li>
-            </ul>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showLevelUpOverlay && (
+          <motion.div
+            key="level-up-overlay"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#050207]/95 via-[#170012]/92 to-[#2a010b]/95 px-6 py-10 text-gray-900 backdrop-blur-xl"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 pointer-events-none">
+              {overlaySparkles.map((sparkle) => (
+                <motion.span
+                  key={sparkle.id}
+                  className="absolute h-1 w-1 rounded-full bg-white shadow-[0_0_15px_rgba(255,255,255,0.9)]"
+                  style={{ top: `${sparkle.top}%`, left: `${sparkle.left}%` }}
+                  animate={{ opacity: [0, 1, 0], scale: [0.5, 1.3, 0.5] }}
+                  transition={{
+                    duration: sparkle.duration,
+                    delay: sparkle.delay,
+                    repeat: Infinity,
+                    repeatType: 'loop',
+                  }}
+                />
+              ))}
+            </div>
+
+            <motion.div
+              className="relative w-full max-w-3xl overflow-hidden rounded-[2.75rem] border border-brand/40 bg-white px-12 py-12 text-center shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 120, damping: 15 }}
+            >
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-br from-brand/15 via-transparent to-brand/5 opacity-80"
+                animate={{ opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 6, repeat: Infinity }}
+              />
+
+              <div className="relative space-y-8 text-gray-900">
+                <motion.p
+                  className="text-sm uppercase tracking-[0.5em] text-brand"
+                  animate={{ letterSpacing: ['0.3em', '0.5em', '0.3em'] }}
+                  transition={{ duration: 4, repeat: Infinity }}
+                >
+                  Ascenso PRIME
+                </motion.p>
+                <motion.h2
+                  className="text-5xl font-black leading-tight text-gray-900"
+                  initial={{ y: -20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.1, type: 'spring', stiffness: 100 }}
+                >
+                  ¡Has subido al nivel {levelUpOverlayLevel}!
+                </motion.h2>
+                <motion.p
+                  className="text-2xl font-semibold text-brand"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  Tu esfuerzo tiene su recompensa. Recuerda revisar el gremio para ver las misiones nuevas.
+                </motion.p>
+
+                <div className="grid gap-4 text-lg text-gray-700 sm:grid-cols-2">
+                  <motion.div
+                    className="rounded-2xl border border-brand/30 bg-brand/5 px-4 py-4"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                  >
+                    <p className="font-semibold text-brand">Nuevos retos</p>
+                    <p className="text-sm text-gray-600">Ahora puedes enfrentarte a nuevos desafíos.</p>
+                  </motion.div>
+                  <motion.div
+                    className="rounded-2xl border border-brand/30 bg-brand/5 px-4 py-4"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    <p className="font-semibold text-brand">Nuevos rango en el gremio</p>
+                    <p className="text-sm text-gray-600">Ahora puedes aceptar nuevas misiones.</p>
+                  </motion.div>
+                </div>
+
+                <div className="flex justify-center gap-6 text-xs uppercase tracking-[0.4em] text-brand">
+                  <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }}>
+                    Constancia
+                  </motion.span>
+                  <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2.3, repeat: Infinity }}>
+                    Determinación
+                  </motion.span>
+                  <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2.6, repeat: Infinity }}>
+                    Progreso
+                  </motion.span>
+                </div>
+                <motion.button
+                  onClick={() => setShowLevelUpOverlay(false)}
+                  className="inline-flex items-center justify-center rounded-2xl bg-brand px-10 py-3 text-lg font-semibold text-white shadow-lg shadow-brand/50 transition hover:scale-105"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Continuar
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 };

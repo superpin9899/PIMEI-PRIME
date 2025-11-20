@@ -132,6 +132,17 @@ function splitSQLStatements(sql) {
   return statements;
 }
 
+function formatSupabaseError(error) {
+  if (!error) return 'Error desconocido';
+  const parts = [
+    `mensaje: ${error.message ?? '—'}`,
+    error.details ? `detalles: ${error.details}` : null,
+    error.hint ? `hint: ${error.hint}` : null,
+    error.code ? `código: ${error.code}` : null,
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
+
 // Función para ejecutar SQL usando la función helper exec_sql
 async function executeSQL(sql) {
   const statements = splitSQLStatements(sql);
@@ -152,20 +163,29 @@ async function executeSQL(sql) {
     console.log(`      ▶ Ejecutando statement ${index + 1}: ${preview}`);
 
     // Ejecutar usando la función RPC exec_sql
-    const { data, error } = await supabase.rpc('exec_sql', { 
-      sql_query: statement + ';' 
+    const { error } = await supabase.rpc('exec_sql', {
+      sql_query: statement + ';',
     });
 
     if (error) {
-      // Si la función no existe, dar instrucciones claras
+      const formattedError = formatSupabaseError(error);
       if (error.message?.includes('function exec_sql') || error.code === '42883') {
         throw new Error(
-          `❌ La función exec_sql no existe en Supabase.\n` +
-          `   Por favor, ejecuta manualmente la migración 001_initial_setup.sql desde el SQL Editor de Supabase.\n` +
-          `   Esto creará la función necesaria para ejecutar migraciones automáticamente.`
+          [
+            '❌ La función exec_sql no existe o no es accesible.',
+            '   Ejecuta manualmente la migración 001_initial_setup.sql en el SQL Editor de Supabase.',
+            '   Detalle del error: ' + formattedError,
+          ].join('\n')
         );
       }
-      throw new Error(`Error ejecutando SQL: ${error.message}\nSQL: ${preview}`);
+      throw new Error(
+        [
+          `❌ Error en el statement ${index + 1}:`,
+          `   ${formattedError}`,
+          '   Statement completo:',
+          statement,
+        ].join('\n')
+      );
     }
   }
 }
