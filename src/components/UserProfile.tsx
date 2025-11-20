@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Crown, Briefcase, BookOpen, Sparkles, Lock } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import magnifyingGlassIcon from '../assets/achievements/magnifying-glass.png';
 
 type PrimeUser = {
   first_name: string;
@@ -18,6 +19,7 @@ type PrimeUser = {
   xp_total: number;
   level: number;
   xp_next_threshold: number;
+  last_achievements_view_at: string | null;
 };
 
 type Training = {
@@ -42,9 +44,26 @@ const xpRequiredForLevel = (level: number) => 100 * level * level;
 const xpThresholdForLevel = (level: number) => 100 * (level + 1) * (level + 1);
 const xpWithinLevel = (xpTotal: number, level: number) => xpTotal - xpRequiredForLevel(level);
 
-const achievementPlaceholders = Array.from({ length: 21 }, (_, index) => ({
-  id: `slot-${index + 1}`,
-}));
+type AchievementRecord = {
+  id: string;
+  slug: string;
+  title: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary' | 'celestial';
+};
+
+type UserAchievementRecord = {
+  achievement_id: string;
+  unlocked_at: string;
+};
+
+type AchievementPreview = AchievementRecord & {
+  unlocked: boolean;
+  unlocked_at: string | null;
+};
+
+const achievementIcons: Record<string, string> = {
+  'empieza-la-aventura': magnifyingGlassIcon,
+};
 
 const UserProfile = () => {
   const { session } = useAuth();
@@ -57,6 +76,7 @@ const UserProfile = () => {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [showTrainingForm, setShowTrainingForm] = useState(false);
   const [showExperienceForm, setShowExperienceForm] = useState(false);
+  const [profileAchievements, setProfileAchievements] = useState<AchievementPreview[]>([]);
   const [trainingForm, setTrainingForm] = useState({
     id: '',
     title: '',
@@ -82,6 +102,20 @@ const UserProfile = () => {
   const [levelUpOverlayLevel, setLevelUpOverlayLevel] = useState(0);
   const [debugXpInput, setDebugXpInput] = useState('');
   const [debugXpLoading, setDebugXpLoading] = useState(false);
+  const profileSlots = useMemo(
+    () => Array.from({ length: Math.max(21, profileAchievements.length) }, (_, index) => profileAchievements[index] ?? null),
+    [profileAchievements]
+  );
+
+  const newAchievementsCount = useMemo(() => {
+    if (!profileAchievements.length) return 0;
+    const lastView = userData?.last_achievements_view_at ? new Date(userData.last_achievements_view_at).getTime() : null;
+    return profileAchievements.filter((achievement) => {
+      if (!achievement.unlocked || !achievement.unlocked_at) return false;
+      if (!lastView) return true;
+      return new Date(achievement.unlocked_at).getTime() > lastView;
+    }).length;
+  }, [profileAchievements, userData?.last_achievements_view_at]);
   const overlaySparkles = useMemo(
     () =>
       Array.from({ length: 16 }, (_, id) => ({
@@ -173,56 +207,56 @@ const UserProfile = () => {
     previousLevelRef.current = actualLevel;
   }, [userData?.xp_total, userData?.level, animateXpGain]);
 
+  const loadProfile = useCallback(async () => {
+    if (!session?.user) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from('prime_users')
+      .select(
+        'first_name,last_name,email,phone,province,percentage_progress,is_woman,receives_benefits,avatar_path,xp_total,level,xp_next_threshold,last_achievements_view_at'
+      )
+      .eq('user_id', session.user.id)
+      .single();
+    const normalizedData = data
+      ? {
+          ...data,
+          xp_total: Number(data.xp_total ?? 0),
+          xp_next_threshold: Number(data.xp_next_threshold ?? 100),
+          level: Number(data.level ?? 0),
+        }
+      : null;
+    setUserData(normalizedData);
+    if (data?.avatar_path) {
+      const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(data.avatar_path);
+      setAvatarUrl(publicUrl.publicUrl ? `${publicUrl.publicUrl}?t=${Date.now()}` : null);
+    } else {
+      setAvatarUrl(null);
+    }
+
+    const { data: trainingData } = await supabase
+      .from('user_training')
+      .select('id,title,provider,start_date,end_date,description')
+      .eq('user_id', session.user.id)
+      .order('start_date', { ascending: false });
+    setTraining(trainingData || []);
+
+    const { data: experienceData } = await supabase
+      .from('user_experience')
+      .select('id,company,role,start_date,end_date,description')
+      .eq('user_id', session.user.id)
+      .order('start_date', { ascending: false });
+    setExperience(experienceData || []);
+
+    setLoading(false);
+  }, [session?.user?.id]);
+
   useEffect(() => {
     if (!session?.user) return;
-
-    const loadProfile = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from('prime_users')
-        .select(
-          'first_name,last_name,email,phone,province,percentage_progress,is_woman,receives_benefits,avatar_path,xp_total,level,xp_next_threshold'
-        )
-        .eq('user_id', session.user.id)
-        .single();
-      const normalizedData = data
-        ? {
-            ...data,
-            xp_total: Number(data.xp_total ?? 0),
-            xp_next_threshold: Number(data.xp_next_threshold ?? 100),
-            level: Number(data.level ?? 0),
-          }
-        : null;
-      setUserData(normalizedData);
-      if (data?.avatar_path) {
-        const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(data.avatar_path);
-        setAvatarUrl(publicUrl.publicUrl ? `${publicUrl.publicUrl}?t=${Date.now()}` : null);
-      } else {
-        setAvatarUrl(null);
-      }
-
-      const { data: trainingData } = await supabase
-        .from('user_training')
-        .select('id,title,provider,start_date,end_date,description')
-        .eq('user_id', session.user.id)
-        .order('start_date', { ascending: false });
-      setTraining(trainingData || []);
-
-      const { data: experienceData } = await supabase
-        .from('user_experience')
-        .select('id,company,role,start_date,end_date,description')
-        .eq('user_id', session.user.id)
-        .order('start_date', { ascending: false });
-      setExperience(experienceData || []);
-
-      setLoading(false);
-    };
     loadProfile();
-
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, loadProfile]);
 
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -275,6 +309,52 @@ const UserProfile = () => {
     setExperience(data || []);
   };
 
+  const loadAchievements = useCallback(async () => {
+    if (!session?.user) return;
+    const [{ data: achievementsData }, { data: unlockedData }] = await Promise.all([
+      supabase.from('achievements').select('id,slug,title,rarity').order('created_at', { ascending: true }),
+      supabase.from('user_achievements').select('achievement_id,unlocked_at').eq('user_id', session.user.id),
+    ]);
+
+    const unlockedMap = new Map<string, UserAchievementRecord>();
+    ((unlockedData as UserAchievementRecord[]) || []).forEach((item) => unlockedMap.set(item.achievement_id, item));
+    const mapped = ((achievementsData as AchievementRecord[]) || []).map<AchievementPreview>((achievement) => ({
+      ...achievement,
+      unlocked: unlockedMap.has(achievement.id),
+      unlocked_at: unlockedMap.get(achievement.id)?.unlocked_at ?? null,
+    }));
+    setProfileAchievements(mapped);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    loadAchievements();
+  }, [loadAchievements]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const channel = supabase
+      .channel(`profile-stream-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'prime_users', filter: `user_id=eq.${session.user.id}` },
+        (payload) => {
+          setUserData((prev) => (prev ? { ...prev, ...payload.new } : (payload.new as PrimeUser | null)));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'user_achievements', filter: `user_id=eq.${session.user.id}` },
+        () => {
+          loadAchievements();
+        }
+      );
+
+    channel.subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id, loadAchievements]);
+
   const handleTrainingSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!session?.user) return;
@@ -294,7 +374,9 @@ const UserProfile = () => {
     }
     setShowTrainingForm(false);
     setTrainingForm({ id: '', title: '', provider: '', start_date: '', end_date: '', description: '' });
-    refreshTraining();
+    await refreshTraining();
+    loadProfile();
+    loadAchievements();
   };
 
   const handleTrainingDelete = async (id: string) => {
@@ -321,7 +403,9 @@ const UserProfile = () => {
     }
     setShowExperienceForm(false);
     setExperienceForm({ id: '', company: '', role: '', start_date: '', end_date: '', description: '' });
-    refreshExperience();
+    await refreshExperience();
+    loadProfile();
+    loadAchievements();
   };
 
   const handleExperienceDelete = async (id: string) => {
@@ -724,23 +808,56 @@ const UserProfile = () => {
                 <p className="text-xs uppercase tracking-[0.3em] text-gray-400">Logros</p>
                 <button
                   onClick={() => navigate('/logros')}
-                  className="rounded-2xl border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  className="relative rounded-2xl border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
                 >
                   Centro de logros
+                  {newAchievementsCount > 0 && (
+                    <span className="absolute -right-2 -top-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white shadow">
+                      {newAchievementsCount}
+                    </span>
+                  )}
                 </button>
               </div>
               <div className="mt-4 h-px w-full bg-gray-100" />
               <div className="mt-4 grid grid-cols-3 gap-3">
-                {achievementPlaceholders.map((achievement) => (
-                  <div
-                    key={achievement.id}
-                    className="group flex aspect-square items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-brand/50 transition-transform duration-200 hover:-translate-y-1 hover:border-brand/40 hover:bg-white"
-                  >
-                    <div className="rounded-2xl bg-white p-2 shadow-sm transition duration-200 group-hover:shadow-md">
-                      <Lock size={18} />
+                {profileSlots.map((achievement, index) => {
+                  if (!achievement) {
+                    return (
+                      <div
+                        key={`placeholder-${index}`}
+                        className="group relative flex aspect-square items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 text-brand/50 overflow-hidden"
+                      >
+                        <Lock size={18} />
+                      </div>
+                    );
+                  }
+
+                  const iconSrc = achievementIcons[achievement.slug];
+
+                  return (
+                    <div
+                      key={achievement.id}
+                      className="group relative flex aspect-square items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 text-brand/50 overflow-hidden"
+                    >
+                      {iconSrc ? (
+                        <>
+                          <img
+                            src={iconSrc}
+                            alt={achievement.title}
+                            className={`h-full w-full object-cover ${achievement.unlocked ? '' : 'opacity-30'}`}
+                          />
+                          {!achievement.unlocked && (
+                            <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                              <Lock size={18} />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <Lock size={18} />
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
