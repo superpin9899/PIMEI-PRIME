@@ -1,12 +1,12 @@
 import Hero from '../components/Hero';
 import GamificationGrid from '../components/GamificationGrid';
-import CTASection from '../components/CTASection';
+import InstitutionalFooter from '../components/InstitutionalFooter';
 
 const LandingPage = () => (
   <>
     <Hero />
     <GamificationGrid />
-    <CTASection />
+    <InstitutionalFooter />
   </>
 );
 
