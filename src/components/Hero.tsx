@@ -1,17 +1,26 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Sparkles, Users } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import AuthPanel from './AuthPanel';
+import { WavyBackground } from './ui/wavy-background';
 
 const Hero = () => {
   return (
-    <section className="relative isolate overflow-hidden bg-hero-grid px-6 py-24 text-white sm:px-12 lg:px-20">
-      <div className="mx-auto grid max-w-6xl gap-16 lg:grid-cols-2">
+    <WavyBackground
+      containerClassName="relative isolate overflow-hidden py-24"
+      className="w-full"
+      colors={['#5d0008', '#8a1a22', '#a82a32', '#c63a42', '#e04a52']}
+      backgroundFill="#0a0a0f"
+      waveOpacity={0.3}
+      blur={15}
+      speed="slow"
+    >
+      <div className="mx-auto grid max-w-6xl gap-16 px-6 sm:px-12 lg:grid-cols-2 lg:px-20">
         <div className="space-y-10">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-xs uppercase tracking-[0.3em]"
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white backdrop-blur-sm"
           >
             <Sparkles size={14} />
             PRIME Gamificatión
@@ -63,18 +72,16 @@ const Hero = () => {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, duration: 0.6 }}
-          className="relative"
+          className="relative flex items-center justify-center"
         >
           <div className="absolute -left-6 -top-6 h-16 w-16 rounded-2xl bg-brand/60 blur-2xl" />
           <div className="absolute -right-10 -bottom-10 h-24 w-24 rounded-full bg-brand-soft/30 blur-3xl" />
-          <AuthPanel />
-          <div className="mt-6 flex items-center gap-4 text-sm text-white/60">
-            <Users size={16} />
-            <span>Más de 120 orientadores ya usan este panel para desbloquear hitos y logros.</span>
+          <div className="w-full">
+            <AuthPanel />
           </div>
         </motion.div>
       </div>
-    </section>
+    </WavyBackground>
   );
 };
 
